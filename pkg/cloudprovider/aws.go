@@ -2,7 +2,9 @@ package cloudprovider
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"net/url"
 
 	"github.com/google/uuid"
@@ -52,6 +54,7 @@ type AWSProvider struct {
 	S3ForcePathStyle        bool
 	CustomCABundle          []byte
 	SnapshotCreationTimeout string
+	Insecure         bool
 }
 
 func (p *AWSProvider) GetURL() string {
@@ -172,6 +175,10 @@ func (p *AWSProvider) UpdateRegistryDC(dc *appsv1.DeploymentConfig, name, dirNam
 				},
 			},
 		},
+		{
+			Name:  "REGISTRY_STORAGE_S3_SKIPVERIFY",
+			Value: strconv.FormatBool(p.Insecure),
+		},
 	}
 }
 
@@ -279,6 +286,7 @@ func (p *AWSProvider) Test(secret *kapi.Secret) error {
 			bucket:         p.Bucket,
 			secret:         secret,
 			customCABundle: p.CustomCABundle,
+			insecure:       p.Insecure,
 		}
 		err = test.Run()
 	case VolumeSnapshot:
@@ -304,6 +312,7 @@ type S3Test struct {
 	forcePathStyle bool
 	customCABundle []byte
 	secret         *kapi.Secret
+	insecure       bool
 }
 
 func (r *S3Test) Run() error {
@@ -325,8 +334,15 @@ func (r *S3Test) Run() error {
 }
 
 func (r *S3Test) newSession() (*session.Session, error) {
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: r.insecure},
+	}
+	client := &http.Client{Transport: transport}
+
 	sessionOptions := session.Options{
 		Config: aws.Config{
+			HTTPClient:       client,
 			Region:           &r.region,
 			Endpoint:         &r.url,
 			DisableSSL:       aws.Bool(r.disableSSL),
