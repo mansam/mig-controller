@@ -86,6 +86,7 @@ func (p *AWSProvider) UpdateBSL(bsl *velero.BackupStorageLocation) {
 	bsl.Spec.Config = map[string]string{
 		"s3ForcePathStyle": strconv.FormatBool(p.GetForcePathStyle()),
 		"region":           p.GetRegion(),
+		"insecure":         strconv.FormatBool(p.Insecure),
 	}
 	if p.S3URL != "" {
 		bsl.Spec.Config["s3Url"] = p.S3URL
