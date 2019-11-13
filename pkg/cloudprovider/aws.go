@@ -3,6 +3,7 @@ package cloudprovider
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -100,6 +101,9 @@ func (p *AWSProvider) UpdateBSL(bsl *velero.BackupStorageLocation) {
 	if p.SignatureVersion != "" {
 		bsl.Spec.Config["signatureVersion"] = p.SignatureVersion
 	}
+	if len(p.CustomCABundle) > 0 {
+		bsl.Spec.Config["customCABundle"] = base64.StdEncoding.EncodeToString(p.CustomCABundle)
+	}
 }
 
 func (p *AWSProvider) UpdateVSL(vsl *velero.VolumeSnapshotLocation) {
@@ -126,8 +130,9 @@ func (p *AWSProvider) UpdateCloudSecret(secret, cloudSecret *kapi.Secret) error 
 
 func (p *AWSProvider) UpdateRegistrySecret(secret, registrySecret *kapi.Secret) error {
 	registrySecret.Data = map[string][]byte{
-		"access_key": []byte(secret.Data[AwsAccessKeyId]),
-		"secret_key": []byte(secret.Data[AwsSecretAccessKey]),
+		"access_key":    []byte(secret.Data[AwsAccessKeyId]),
+		"secret_key":    []byte(secret.Data[AwsSecretAccessKey]),
+		"ca_bundle.pem": p.CustomCABundle,
 	}
 	return nil
 }
@@ -180,6 +185,25 @@ func (p *AWSProvider) UpdateRegistryDC(dc *appsv1.DeploymentConfig, name, dirNam
 			Name:  "REGISTRY_STORAGE_S3_SKIPVERIFY",
 			Value: strconv.FormatBool(p.Insecure),
 		},
+	}
+	if len(p.CustomCABundle) > 0 {
+		dc.Spec.Template.Spec.Containers[0].VolumeMounts = append(dc.Spec.Template.Spec.Containers[0].VolumeMounts, kapi.VolumeMount{
+			Name:      "registry-secret",
+			MountPath: "/opt/secrets",
+			ReadOnly:  true,
+		})
+		dc.Spec.Template.Spec.Volumes = append(dc.Spec.Template.Spec.Volumes, kapi.Volume{
+			Name: "registry-secret",
+			VolumeSource: kapi.VolumeSource{
+				Secret: &kapi.SecretVolumeSource{
+					SecretName: name,
+				},
+			},
+		})
+		dc.Spec.Template.Spec.Containers[0].Env = append(dc.Spec.Template.Spec.Containers[0].Env, kapi.EnvVar{
+			Name:  "AWS_CA_BUNDLE",
+			Value: "/opt/secrets/ca_bundle.pem",
+		})
 	}
 }
 
