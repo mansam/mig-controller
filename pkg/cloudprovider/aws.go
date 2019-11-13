@@ -186,29 +186,34 @@ func (p *AWSProvider) UpdateRegistryDC(dc *appsv1.DeploymentConfig, name, dirNam
 			Value: strconv.FormatBool(p.Insecure),
 		},
 		{
-			Name:  "REGISTRY_STORAGE_S3_USERAGENT",
-			Value: "",
+			Name:  "CUSTOM_CA_BUNDLE",
+			Value: base64.StdEncoding.EncodeToString(p.CustomCABundle),
 		},
 	}
 	if len(p.CustomCABundle) > 0 {
-		dc.Spec.Template.Spec.Containers[0].VolumeMounts = append(dc.Spec.Template.Spec.Containers[0].VolumeMounts, kapi.VolumeMount{
-			Name:      "registry-secret",
-			MountPath: "/opt/secrets",
-			ReadOnly:  true,
-		})
-		dc.Spec.Template.Spec.Volumes = append(dc.Spec.Template.Spec.Volumes, kapi.Volume{
-			Name: "registry-secret",
-			VolumeSource: kapi.VolumeSource{
-				Secret: &kapi.SecretVolumeSource{
-					SecretName: name,
-				},
-			},
-		})
-		dc.Spec.Template.Spec.Containers[0].Env = append(dc.Spec.Template.Spec.Containers[0].Env, kapi.EnvVar{
-			Name:  "AWS_CA_BUNDLE",
-			Value: "/opt/secrets/ca_bundle.pem",
-		})
+		dc.Spec.Template.Spec.Containers[0].Lifecycle.PostStart.Exec.Command = []string{
+			"/bin/sh", "-c", "cat $CUSTOM_CA_BUNDLE > /etc/ssl/certs/custom_ca_bundle.pem",
+		}
 	}
+	//if len(p.CustomCABundle) > 0 {
+	//	dc.Spec.Template.Spec.Containers[0].VolumeMounts = append(dc.Spec.Template.Spec.Containers[0].VolumeMounts, kapi.VolumeMount{
+	//		Name:      "registry-secret",
+	//		MountPath: "/opt/secrets",
+	//		ReadOnly:  true,
+	//	})
+	//	dc.Spec.Template.Spec.Volumes = append(dc.Spec.Template.Spec.Volumes, kapi.Volume{
+	//		Name: "registry-secret",
+	//		VolumeSource: kapi.VolumeSource{
+	//			Secret: &kapi.SecretVolumeSource{
+	//				SecretName: name,
+	//			},
+	//		},
+	//	})
+	//	dc.Spec.Template.Spec.Containers[0].Env = append(dc.Spec.Template.Spec.Containers[0].Env, kapi.EnvVar{
+	//		Name:  "AWS_CA_BUNDLE",
+	//		Value: "/opt/secrets/ca_bundle.pem",
+	//	})
+	//}
 }
 
 func (p *AWSProvider) Validate(secret *kapi.Secret) []string {
