@@ -185,6 +185,10 @@ func (p *AWSProvider) UpdateRegistryDC(dc *appsv1.DeploymentConfig, name, dirNam
 			Name:  "REGISTRY_STORAGE_S3_SKIPVERIFY",
 			Value: strconv.FormatBool(p.Insecure),
 		},
+		{
+			Name:  "REGISTRY_STORAGE_S3_USERAGENT",
+			Value: "",
+		},
 	}
 	if len(p.CustomCABundle) > 0 {
 		dc.Spec.Template.Spec.Containers[0].VolumeMounts = append(dc.Spec.Template.Spec.Containers[0].VolumeMounts, kapi.VolumeMount{
