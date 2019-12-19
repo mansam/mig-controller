@@ -55,7 +55,7 @@ type AWSProvider struct {
 	S3ForcePathStyle        bool
 	CustomCABundle          []byte
 	SnapshotCreationTimeout string
-	Insecure         bool
+	InsecureSkipTLSVerify   bool
 }
 
 func (p *AWSProvider) GetURL() string {
@@ -85,9 +85,9 @@ func (p *AWSProvider) UpdateBSL(bsl *velero.BackupStorageLocation) {
 		},
 	}
 	bsl.Spec.Config = map[string]string{
-		"s3ForcePathStyle": strconv.FormatBool(p.GetForcePathStyle()),
-		"region":           p.GetRegion(),
-		"insecure":         strconv.FormatBool(p.Insecure),
+		"s3ForcePathStyle":      strconv.FormatBool(p.GetForcePathStyle()),
+		"region":                p.GetRegion(),
+		"insecureSkipTLSVerify": strconv.FormatBool(p.InsecureSkipTLSVerify),
 	}
 	if p.S3URL != "" {
 		bsl.Spec.Config["s3Url"] = p.S3URL
@@ -183,7 +183,7 @@ func (p *AWSProvider) UpdateRegistryDC(dc *appsv1.DeploymentConfig, name, dirNam
 		},
 		{
 			Name:  "REGISTRY_STORAGE_S3_SKIPVERIFY",
-			Value: strconv.FormatBool(p.Insecure),
+			Value: strconv.FormatBool(p.InsecureSkipTLSVerify),
 		},
 	}
 	if len(p.CustomCABundle) > 0 {
@@ -300,15 +300,15 @@ func (p *AWSProvider) Test(secret *kapi.Secret) error {
 	case BackupStorage:
 		key, _ := uuid.NewUUID()
 		test := S3Test{
-			key:            key.String(),
-			url:            p.GetURL(),
-			region:         p.GetRegion(),
-			disableSSL:     p.GetDisableSSL(),
-			forcePathStyle: p.GetForcePathStyle(),
-			bucket:         p.Bucket,
-			secret:         secret,
-			customCABundle: p.CustomCABundle,
-			insecure:       p.Insecure,
+			key:                   key.String(),
+			url:                   p.GetURL(),
+			region:                p.GetRegion(),
+			disableSSL:            p.GetDisableSSL(),
+			forcePathStyle:        p.GetForcePathStyle(),
+			bucket:                p.Bucket,
+			secret:                secret,
+			customCABundle:        p.CustomCABundle,
+			insecureSkipTLSVerify: p.InsecureSkipTLSVerify,
 		}
 		err = test.Run()
 	case VolumeSnapshot:
@@ -326,15 +326,15 @@ func (p *AWSProvider) Test(secret *kapi.Secret) error {
 }
 
 type S3Test struct {
-	key            string
-	url            string
-	region         string
-	bucket         string
-	disableSSL     bool
-	forcePathStyle bool
-	customCABundle []byte
-	secret         *kapi.Secret
-	insecure       bool
+	key                   string
+	url                   string
+	region                string
+	bucket                string
+	disableSSL            bool
+	forcePathStyle        bool
+	customCABundle        []byte
+	secret                *kapi.Secret
+	insecureSkipTLSVerify bool
 }
 
 func (r *S3Test) Run() error {
@@ -358,7 +358,7 @@ func (r *S3Test) Run() error {
 func (r *S3Test) newSession() (*session.Session, error) {
 
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: r.insecure},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: r.insecureSkipTLSVerify},
 	}
 	client := &http.Client{Transport: transport}
 
