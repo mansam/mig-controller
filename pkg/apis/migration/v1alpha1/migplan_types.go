@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/konveyor/mig-controller/pkg/auth"
 	"os"
 	"reflect"
 	"regexp"
@@ -36,7 +37,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	migauth "github.com/konveyor/mig-controller/pkg/auth"
 	pvdr "github.com/konveyor/mig-controller/pkg/cloudprovider"
 	migref "github.com/konveyor/mig-controller/pkg/reference"
 	"github.com/konveyor/mig-controller/pkg/settings"
@@ -57,7 +57,8 @@ type MigPlanSpec struct {
 	SrcMigClusterRef  *kapi.ObjectReference `json:"srcMigClusterRef,omitempty"`
 	DestMigClusterRef *kapi.ObjectReference `json:"destMigClusterRef,omitempty"`
 	MigStorageRef     *kapi.ObjectReference `json:"migStorageRef,omitempty"`
-	IdentitySecretRef *kapi.ObjectReference `json:"identitySecretRef,omitempty"`
+	SrcIdentityRef    *kapi.ObjectReference `json:"srcIdentityRef,omitempty"`
+	DestIdentityRef   *kapi.ObjectReference `json:"destIdentityRef,omitempty"`
 	Closed            bool                  `json:"closed,omitempty"`
 }
 
@@ -102,7 +103,7 @@ func (r *MigPlan) GetSourceCluster(client k8sclient.Client) (*MigCluster, error)
 
 // GetSourceIdentity - Get the source identity object using the secret
 // Returns nil if unable to build
-func (r *MigPlan) GetSourceIdentity(client k8sclient.Client) (*migauth.Identity, error) {
+func (r *MigPlan) GetSourceIdentity(client k8sclient.Client) (*auth.Identity, error) {
 	srcToken, err := r.GetSourceIdentityToken(client)
 	if err != nil {
 		return nil, err
@@ -118,7 +119,7 @@ func (r *MigPlan) GetSourceIdentity(client k8sclient.Client) (*migauth.Identity,
 	if err != nil {
 		return nil, err
 	}
-	srcIdentity := &migauth.Identity{
+	srcIdentity := &auth.Identity{
 		Token:   srcToken,
 		RestCfg: *srcRestCfg,
 	}
@@ -128,7 +129,7 @@ func (r *MigPlan) GetSourceIdentity(client k8sclient.Client) (*migauth.Identity,
 
 // GetDestinationIdentity - Get the destination identity object using the secret
 // Returns nil if unable to build
-func (r *MigPlan) GetDestinationIdentity(client k8sclient.Client) (*migauth.Identity, error) {
+func (r *MigPlan) GetDestinationIdentity(client k8sclient.Client) (*auth.Identity, error) {
 	destToken, err := r.GetDestinationIdentityToken(client)
 	if err != nil {
 		return nil, err
@@ -144,7 +145,7 @@ func (r *MigPlan) GetDestinationIdentity(client k8sclient.Client) (*migauth.Iden
 	if err != nil {
 		return nil, err
 	}
-	destIdentity := &migauth.Identity{
+	destIdentity := &auth.Identity{
 		Token:   destToken,
 		RestCfg: *destRestCfg,
 	}
@@ -161,43 +162,47 @@ func (r *MigPlan) GetDestinationCluster(client k8sclient.Client) (*MigCluster, e
 // GetSourceIdentity - Get the source identity token
 // Returns "" if not found
 func (r *MigPlan) GetSourceIdentityToken(client k8sclient.Client) (string, error) {
-	secret, err := r.GetIdentitySecret(client)
+	identity, err := r.GetDestinationMigIdentity(client)
 	if err != nil {
 		return "", err
 	}
-	if secret == nil {
-		return "", errors.New("identity secret not found")
+	if identity == nil {
+		return "", errors.New("identity not found")
 	}
-	if secret.Data == nil {
-		return "", errors.New("identity secret misconfigured")
+
+	token, err := identity.GetToken(client)
+	if err != nil {
+		return "", err
 	}
-	if secret.Data["srcToken"] == nil {
-		return "", errors.New("identity secret misconfigured")
-	}
-	return string(secret.Data["srcToken"]), nil
+
+	return token, nil
 }
 
 // GetDestinationIdentity - Get the destination identity token
 // Returns "" if not found
 func (r *MigPlan) GetDestinationIdentityToken(client k8sclient.Client) (string, error) {
-	secret, err := r.GetIdentitySecret(client)
+	identity, err := r.GetDestinationMigIdentity(client)
 	if err != nil {
 		return "", err
 	}
-	if secret == nil {
-		return "", errors.New("identity secret not found")
+	if identity == nil {
+		return "", errors.New("identity not found")
 	}
-	if secret.Data == nil {
-		return "", errors.New("identity secret misconfigured")
+
+	token, err := identity.GetToken(client)
+	if err != nil {
+		return "", err
 	}
-	if secret.Data["destToken"] == nil {
-		return "", errors.New("identity secret misconfigured")
-	}
-	return string(secret.Data["destToken"]), nil
+
+	return token, nil
 }
 
-func (r *MigPlan) GetIdentitySecret(client k8sclient.Client) (*kapi.Secret, error) {
-	return GetSecret(client, r.Spec.IdentitySecretRef)
+func (r *MigPlan) GetSourceMigIdentity(client k8sclient.Client) (*MigIdentity, error) {
+	return GetIdentity(client, r.Spec.SrcIdentityRef)
+}
+
+func (r *MigPlan) GetDestinationMigIdentity(client k8sclient.Client) (*MigIdentity, error) {
+	return GetIdentity(client, r.Spec.DestIdentityRef)
 }
 
 // GetStorage - Get the referenced storage..
@@ -209,10 +214,12 @@ func (r *MigPlan) GetStorage(client k8sclient.Client) (*MigStorage, error) {
 // Resources referenced by the plan.
 // Contains all of the fetched referenced resources.
 type PlanResources struct {
-	MigPlan        *MigPlan
-	MigStorage     *MigStorage
-	SrcMigCluster  *MigCluster
-	DestMigCluster *MigCluster
+	MigPlan         *MigPlan
+	MigStorage      *MigStorage
+	SrcMigCluster   *MigCluster
+	DestMigCluster  *MigCluster
+	SrcMigIdentity  *MigIdentity
+	DestMigIdentity *MigIdentity
 }
 
 // GetRefResources gets referenced resources from a MigPlan.
@@ -244,20 +251,20 @@ func (r *MigPlan) GetRefResources(client k8sclient.Client) (*PlanResources, erro
 		return nil, errors.New("destination cluster not found")
 	}
 
-	// Identity
-	identitySecret, err := r.GetIdentitySecret(client)
-	if err != nil {
-		return nil, err
-	}
-	if identitySecret == nil {
-		return nil, errors.New("identity secret not found")
-	}
-	if identitySecret.Data["srcToken"] == nil {
-		return nil, errors.New("identity secret doesn't contain source token")
-	}
-	if identitySecret.Data["destToken"] == nil {
-		return nil, errors.New("identity secret doesn't contain source token")
-	}
+	//// Identity
+	//identitySecret, err := r.GetIdentitySecret(client)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//if identitySecret == nil {
+	//	return nil, errors.New("identity secret not found")
+	//}
+	//if identitySecret.Data["srcToken"] == nil {
+	//	return nil, errors.New("identity secret doesn't contain source token")
+	//}
+	//if identitySecret.Data["destToken"] == nil {
+	//	return nil, errors.New("identity secret doesn't contain source token")
+	//}
 
 	resources := &PlanResources{
 		MigPlan:        r,

@@ -28,7 +28,7 @@ spec:
           type: object
         spec:
           properties:
-            destMigClusterRef:
+            migClusterRef:
               type: object
             identitySecretRef:
               type: object

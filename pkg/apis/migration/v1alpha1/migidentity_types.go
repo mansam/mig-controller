@@ -17,13 +17,17 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"errors"
+	"github.com/konveyor/mig-controller/pkg/auth"
 	kapi "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // MigIdentitySpec defines the desired state of MigIdentity
 type MigIdentitySpec struct {
-	IdentitySecretRef *kapi.ObjectReference `json:"identitySecretRef,omitempty"`
+	MigClusterRef     *kapi.ObjectReference `json:"migClusterRef"`
+	IdentitySecretRef *kapi.ObjectReference `json:"identitySecretRef"`
 }
 
 // MigIdentityStatus defines the observed state of MigIdentity
@@ -57,4 +61,57 @@ type MigIdentityList struct {
 
 func init() {
 	SchemeBuilder.Register(&MigIdentity{}, &MigIdentityList{})
+}
+
+func (r *MigIdentity) GetSecret(client k8sclient.Client) (*kapi.Secret, error) {
+	return GetSecret(client, r.Spec.IdentitySecretRef)
+}
+
+func (r *MigIdentity) GetToken(client k8sclient.Client) (string, error) {
+	secret, err := r.GetSecret(client)
+	if err != nil {
+		return "", err
+	}
+	if secret == nil {
+		return "", errors.New("identity secret not found")
+	}
+	if secret.Data == nil {
+		return "", errors.New("identity secret misconfigured")
+	}
+	if secret.Data["token"] == nil {
+		return "", errors.New("identity secret misconfigured")
+	}
+	return string(secret.Data["token"]), nil
+}
+
+func (r *MigIdentity) GetCluster(client k8sclient.Client) (*MigCluster, error) {
+	return GetCluster(client, r.Spec.MigClusterRef)
+}
+
+func (r *MigIdentity) BuildIdentity(client k8sclient.Client) (*auth.Identity, error) {
+	token, err := r.GetToken(client)
+	if err != nil {
+		return nil, err
+	}
+
+	cluster, err := r.GetCluster(client)
+	if err != nil {
+		return nil, err
+	}
+	if cluster == nil || !cluster.Status.IsReady() {
+		return nil, errors.New("cluster is not in a ready state")
+	}
+	restCfg, err := cluster.BuildRestConfig(client)
+	if err != nil {
+		return nil, err
+	}
+	clusterIdentity := &auth.Identity{
+		Token: token,
+		RestCfg: *restCfg,
+	}
+	err = clusterIdentity.BuildClient()
+	if err != nil {
+		return nil, err
+	}
+	return clusterIdentity, nil
 }

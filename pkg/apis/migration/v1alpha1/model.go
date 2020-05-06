@@ -113,6 +113,31 @@ func GetStorage(client k8sclient.Client, ref *kapi.ObjectReference) (*MigStorage
 	return &object, err
 }
 
+// Get a referenced MigIdentity.
+// Returns `nil` when the reference cannot be resolved.
+func GetIdentity(client k8sclient.Client, ref *kapi.ObjectReference) (*MigIdentity, error) {
+	if ref == nil {
+		return nil, nil
+	}
+	object := MigIdentity{}
+	err := client.Get(
+		context.TODO(),
+		types.NamespacedName{
+			Namespace: ref.Namespace,
+			Name:      ref.Name,
+		},
+		&object)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		} else {
+			return nil, err
+		}
+	}
+
+	return &object, err
+}
+
 // List MigStorage
 // Returns and empty list when none found.
 func ListStorage(client k8sclient.Client) ([]MigStorage, error) {
