@@ -210,6 +210,48 @@ func (r *MigMigration) InPrivileged() bool {
 	return r.GetNamespace() == settings.Settings.Namespace.Privileged
 }
 
+// Cluster
+func (r *MigIdentity) GetCorrelationLabels() map[string]string {
+	key, value := r.GetCorrelationLabel()
+	return map[string]string{
+		PartOfLabel: Application,
+		key:         value,
+	}
+}
+
+func (r *MigIdentity) GetCorrelationLabel() (string, string) {
+	return CorrelationLabel(r, r.UID)
+}
+
+func (r *MigIdentity) GetNamespace() string {
+	return r.Namespace
+}
+
+func (r *MigIdentity) GetName() string {
+	return r.Name
+}
+
+func (r *MigIdentity) MarkReconciled() {
+	uuid, _ := uuid.NewUUID()
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations[TouchAnnotation] = uuid.String()
+	r.Status.ObservedDigest = digest(r.Spec)
+}
+
+func (r *MigIdentity) HasReconciled() bool {
+	return r.Status.ObservedDigest == digest(r.Spec)
+}
+
+func (r *MigIdentity) InSandbox() bool {
+	return r.GetNamespace() == settings.Settings.Namespace.Sandbox
+}
+
+func (r *MigIdentity) InPrivileged() bool {
+	return r.GetNamespace() == settings.Settings.Namespace.Privileged
+}
+
 //
 // Generate a sha256 hex-digest for an object.
 func digest(object interface{}) string {
